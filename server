@@ -1,0 +1,198 @@
+#include<stdio.h>
+#include<sys/socket.h>
+#include<netdb.h>
+#include<sys/types.h>
+#include<unistd.h>
+#include<string.h>
+#include<fcntl.h>
+#include<pthread.h>
+#include<stdlib.h>
+
+ssize_t read_exact(int fd, const void *buf, size_t len)
+  {
+    size_t total_read = 0;
+    char *p = (char *)buf;
+    while(total_read < len)
+      {
+        ssize_t read_c = read(fd, p+total_read, len-total_read);
+        if(read_c <= 0)
+          {
+            perror("readfile");
+            return -1;
+          }
+        total_read += read_c;
+      }
+      return total_read;
+  }
+
+
+void* handle_thread(void* s)
+{
+  int sock = *(int*)s;
+  
+  //In active mode, receive the connection data and try to connect
+  char buff[1024];
+  int n;
+  n = read(sock, buff, sizeof(buff));
+  if(n >= 0)
+    {
+      buff[n] = '\0';
+    }
+  else
+    {
+      perror("read");
+      return NULL;
+    }
+    
+  int err;
+  struct addrinfo hints_1;
+  struct addrinfo *port_info;
+  memset(&hints_1, 0, sizeof(hints_1));
+  hints_1.ai_family = AF_INET;
+  hints_1.ai_socktype = SOCK_STREAM;
+  hints_1.ai_flags = AI_PASSIVE;
+  
+  if((err = getaddrinfo(NULL, "20", &hints_1, &port_info)) != 0)
+    {
+      printf("getportinfo %d : %s \n", err, gai_strerror(err));
+    }
+  
+  int sock_data;
+  sock_data = socket(port_info->ai_family, port_info->ai_socktype, port_info->ai_protocol);
+  if(sock_data < 0)
+    {
+      perror("sock_data");
+      return NULL;
+    }
+  int opt = 1;
+  if(setsockopt(sock_data, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
+    {
+      perror("setsockopt");
+      return NULL;
+    }
+  if(bind(sock_data, port_info->ai_addr, port_info->ai_addrlen) < 0)
+   {
+      perror("bind20");
+      return NULL;
+   }
+   freeaddrinfo(port_info);
+   
+   int err_1;
+   struct addrinfo hints_2;
+   struct addrinfo* client_info;
+   memset(&hints_2, 0, sizeof(hints_2));
+   hints_2.ai_family = AF_INET;
+   hints_2.ai_socktype = SOCK_STREAM;
+   hints_2.ai_flags = AI_PASSIVE;
+   
+   if(getaddrinfo(buff, "20", &hints_2, &client_info) < 0)
+    {
+      printf("getclientinfo %d : %s \n", err, gai_strerror(err));
+    }
+   
+  if(connect(sock_data, client_info->ai_addr, client_info->ai_addrlen) != 0)
+    {
+      perror("connect_data");
+      return NULL;
+    }
+    freeaddrinfo(client_info);
+  //read and write
+  char name[50];
+  int file_fd;
+  if(read(sock, name, sizeof(name)) < 0)
+    {
+      perror("read_file_name");
+      return NULL;
+    }
+
+  file_fd = open(name, O_RDWR | O_CREAT, 0666);
+  if(file_fd < 0)
+    {
+      perror("open_file");
+      return NULL;
+    }
+  
+  char buf_file[65536];
+  int ret;
+  while((n = read_exact(sock_data, buf_file, sizeof(buf_file))) > 0)
+    {
+      ret = write(file_fd, buf_file, n);
+      if(ret < 0)
+        {
+          perror("write_file");
+          return NULL;
+        }
+    }
+  
+  //close
+  close(sock);
+  close(sock_data);
+  close(file_fd);
+}
+
+int main()
+{
+  //create a sock
+  int sock_ser_lis;
+  sock_ser_lis = socket(AF_INET, SOCK_STREAM, 0);
+  if(sock_ser_lis == -1)
+    {
+      perror("sock_lis");
+      return 1;
+    }
+
+  //bind a name to the socket file descriptor
+  struct sockaddr_in addr_lis;
+  addr_lis.sin_family = AF_INET;
+  addr_lis.sin_port = htons(21);
+  addr_lis.sin_addr.s_addr = INADDR_ANY;
+  socklen_t addr_lis_len = sizeof(addr_lis);
+  if(bind(sock_ser_lis, (struct sockaddr *)&addr_lis, addr_lis_len))
+    {
+      perror("bind");
+      return 1;
+    }
+    
+  int listen_check;
+  //keep listening
+  while(1)
+  {
+    //start to listen
+    listen_check = listen(sock_ser_lis, 5);
+    if(listen_check == -1)
+      { 
+        perror("listen");
+        return 1;
+      }
+    //accept the request
+    int client_sock;
+    struct sockaddr_in client_addr;
+    client_addr.sin_family = AF_INET;
+    //client_addr.sin_port = htons(20);
+    client_addr.sin_addr.s_addr = INADDR_ANY;
+    socklen_t client_addr_len = sizeof(client_addr);
+
+    client_sock = accept(sock_ser_lis, (struct sockaddr *)&client_addr, &client_addr_len);
+    if(client_sock < 0)
+      {
+        perror("accept");
+        return 1;
+      }
+    
+    int *new_sock = malloc(sizeof(int));
+    *new_sock = client_sock;
+    
+    pthread_t thread;
+    if(pthread_create(&thread, NULL, handle_thread, (void*)new_sock) < 0)
+      {
+        perror("thread");
+        free(new_sock);
+        continue;
+      }
+      
+    pthread_detach(thread);    
+  }
+  
+    close(sock_ser_lis);
+    return 0;
+}
