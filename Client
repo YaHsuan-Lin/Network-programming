@@ -1,0 +1,137 @@
+#include<stdio.h>
+#include<sys/socket.h>
+#include<netdb.h>
+#include<sys/types.h>
+#include<unistd.h>
+#include<string.h>
+#include<fcntl.h>
+
+ssize_t send_all(int fd, const void *buf, size_t len)
+  {
+    size_t total_sent = 0;
+    const char *p = buf;
+    while(total_sent < len)
+      {
+        ssize_t sent = write(fd, p+total_sent, len-total_sent);
+        if(sent <= 0)
+          {
+            perror("sentfile");
+            return 1;
+          }
+        total_sent += sent;
+      }
+      return total_sent;
+  }
+
+int main()
+{  
+  //Connection needed: IP, port, family, type --> getaddrinfo
+  struct addrinfo hints;
+  struct addrinfo *res;
+  int err;
+  
+  memset(&hints, 0, sizeof(hints));
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_family = AF_INET;
+  
+  if((err = getaddrinfo("192.168.0.1", "21", &hints, &res)) != 0)
+    {
+      printf("error %d : %s\n", err, gai_strerror(err));
+      return 1;
+    }
+  
+  //Using the information to create socket and start to connect
+  int sock;
+  sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+  if(sock < 0)
+    {
+      perror("sock");
+      return 1;
+    }
+  if(connect(sock, res->ai_addr, res->ai_addrlen) != 0)
+    {
+      perror("connect");
+      return 1;
+    }
+  
+  //In active mode, sending connection data to server and start to listen    
+  int sock_data;
+  sock_data = socket(AF_INET, SOCK_STREAM, 0);
+  if(sock_data < 0)
+    {
+      perror("sock_data");
+      return 1;
+    }
+    
+  int sock_data_1;
+  struct sockaddr_in server_addr;
+  socklen_t server_addr_len = sizeof(server_addr);
+  struct sockaddr_in addr_data;
+  addr_data.sin_family = AF_INET;
+  addr_data.sin_port = htons(20);
+  addr_data.sin_addr.s_addr = INADDR_ANY;
+  socklen_t addr_data_len = sizeof(addr_data);
+  if(bind(sock_data, (struct sockaddr *)&addr_data, addr_data_len))
+    {
+      perror("bind_data");
+      return 1;
+    }
+    
+  char *ip_str = "192.168.0.2";
+  if(write(sock, ip_str, strlen(ip_str)) < 0)
+    {
+      perror("write");
+      return 1;
+    }
+
+  int listen_check;
+  listen_check = listen(sock_data, 5);
+  if(listen_check == -1)
+    {
+      perror("listen_data");
+      return 1;
+    }
+  sock_data_1 = accept(sock_data, (struct sockaddr *)&server_addr, &server_addr_len);
+  if(sock_data_1 < 0)
+    {
+      perror("sock_data_1");
+      return 1;
+    }
+  
+  //write and read file
+  char *file_name_s = "homework.txt\0";
+  if(write(sock, file_name_s, strlen(file_name_s)) < 0)
+    {
+      perror("write_file_name");
+      return 1;
+    }
+
+  int file_fd;
+  char *file_name = "homework.txt";
+  file_fd = open(file_name, O_RDONLY);
+  if(file_fd < 0)
+    {
+      perror("open_file");
+      return 1;
+    }
+
+  char buf_file[65536];
+  int n, r;
+  while((n = read(file_fd, buf_file, sizeof(buf_file))) > 0)
+    {
+      if((r = send_all(sock_data_1, buf_file, n)) < 0)
+        {
+          perror("writefile");
+          return 1;
+        }
+    }
+  
+  //close
+  freeaddrinfo(res);
+  close(sock);
+  close(sock_data);
+  close(sock_data_1);
+  close(file_fd);
+  
+  return 0;
+}
