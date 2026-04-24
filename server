@@ -7,6 +7,7 @@
 #include<fcntl.h>
 #include<pthread.h>
 #include<stdlib.h>
+#include<sys/stat.h>
 
 ssize_t read_exact(int fd, const void *buf, size_t len)
   {
@@ -96,6 +97,7 @@ void* handle_thread(void* s)
       return NULL;
     }
     freeaddrinfo(client_info);
+    
   //read and write
   char name[50];
   int file_fd;
@@ -111,7 +113,26 @@ void* handle_thread(void* s)
       perror("open_file");
       return NULL;
     }
+    
+  struct stat file_stat;
+  long current_size = 0;
+  if(stat(name, &file_stat) == 0)
+    {
+      current_size = file_stat.st_size;
+    }
+  else
+    {
+      perror("file_state");
+      return NULL;
+    }
+  write(sock, &current_size, sizeof(current_size));
   
+  if((lseek(file_fd, current_size, SEEK_SET)) == -1)
+    {
+      perror("lseek");
+      return NULL;
+    }
+    
   char buf_file[65536];
   int ret;
   while((n = read_exact(sock_data, buf_file, sizeof(buf_file))) > 0)
@@ -133,21 +154,21 @@ void* handle_thread(void* s)
 int main()
 {
   //create a sock
-  int sock_ser_lis;
-  sock_ser_lis = socket(AF_INET, SOCK_STREAM, 0);
-  if(sock_ser_lis == -1)
+  int sock_ser_lis;  
+  sock_ser_lis = socket(AF_INET, SOCK_STREAM, 0);  
+  if(sock_ser_lis == -1)  
     {
-      perror("sock_lis");
-      return 1;
+      perror("sock_lis");  
+      return 1;  
     }
 
   //bind a name to the socket file descriptor
-  struct sockaddr_in addr_lis;
-  addr_lis.sin_family = AF_INET;
-  addr_lis.sin_port = htons(21);
-  addr_lis.sin_addr.s_addr = INADDR_ANY;
-  socklen_t addr_lis_len = sizeof(addr_lis);
-  if(bind(sock_ser_lis, (struct sockaddr *)&addr_lis, addr_lis_len))
+  struct sockaddr_in addr_lis;  
+  addr_lis.sin_family = AF_INET;  
+  addr_lis.sin_port = htons(21);  
+  addr_lis.sin_addr.s_addr = INADDR_ANY;  
+  socklen_t addr_lis_len = sizeof(addr_lis);  
+  if(bind(sock_ser_lis, (struct sockaddr *)&addr_lis, addr_lis_len))  
     {
       perror("bind");
       return 1;
