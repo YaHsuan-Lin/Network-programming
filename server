@@ -86,9 +86,9 @@ void* handle_thread(void* s)
    hints_2.ai_socktype = SOCK_STREAM;
    hints_2.ai_flags = AI_PASSIVE;
    
-   if(getaddrinfo(buff, "20", &hints_2, &client_info) < 0)
+   if((err_1 = getaddrinfo(buff, "20", &hints_2, &client_info)) < 0)
     {
-      printf("getclientinfo %d : %s \n", err, gai_strerror(err));
+      printf("getclientinfo %d : %s \n", err_1, gai_strerror(err_1));
     }
    
   if(connect(sock_data, client_info->ai_addr, client_info->ai_addrlen) != 0)
@@ -149,6 +149,7 @@ void* handle_thread(void* s)
   close(sock);
   close(sock_data);
   close(file_fd);
+  close(s);
 }
 
 int main()
