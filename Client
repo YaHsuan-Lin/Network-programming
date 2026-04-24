@@ -114,6 +114,11 @@ int main()
       perror("open_file");
       return 1;
     }
+    
+  long server_offset = 0;
+  read(sock, &server_offset, sizeof(server_offset));
+  
+  lseek(file_fd, server_offset, sizeof(server_offset));
 
   char buf_file[65536];
   int n, r;
